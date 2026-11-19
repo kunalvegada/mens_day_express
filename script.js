@@ -1,7 +1,7 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
 import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 
-// 1. YOUR ACTUAL FIREBASE CONFIG
+// 1. FIREBASE CONFIG
 const firebaseConfig = {
   apiKey: "AIzaSyAi4DBUIOtMmNOkjsQSXW_EdT7yU36DKJA",
   authDomain: "ladies-special-express-26.firebaseapp.com",
@@ -17,8 +17,48 @@ const carriagesCol = collection(db, "mens_day_carriages");
 
 let globalTrainData = [];
 
-// 2. FORM LOGIC (Saves to the Cloud)
-document.getElementById('submitBtn').onclick = function() {
+// HELPER: AUTOMATIC IMAGE RESIZER & COMPRESSOR
+function compressImage(file, maxWidth = 800, quality = 0.7) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = (event) => {
+            const img = new Image();
+            img.src = event.target.result;
+            img.onload = () => {
+                let width = img.width;
+                let height = img.height;
+
+                // Scale down while maintaining aspect ratio
+                if (width > height) {
+                    if (width > maxWidth) {
+                        height = Math.round((height * maxWidth) / width);
+                        width = maxWidth;
+                    }
+                } else {
+                    if (height > maxWidth) {
+                        width = Math.round((width * maxWidth) / height);
+                        height = maxWidth;
+                    }
+                }
+
+                const canvas = document.createElement('canvas');
+                canvas.width = width;
+                canvas.height = height;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0, width, height);
+
+                // Convert to compressed Base64 JPEG string
+                resolve(canvas.toDataURL('image/jpeg', quality));
+            };
+            img.onerror = (err) => reject(err);
+        };
+        reader.onerror = (err) => reject(err);
+    });
+}
+
+// 2. FORM LOGIC (Saves to Cloud with Auto Resizing)
+document.getElementById('submitBtn').onclick = async function() {
     const fileInput = document.getElementById('photoInput');
     const senderInput = document.getElementById('senderName');
     const receiverInput = document.getElementById('receiverName');
@@ -28,42 +68,44 @@ document.getElementById('submitBtn').onclick = function() {
         return alert("Please fill the names and pick a photo! 🚂");
     }
 
-    const reader = new FileReader();
-    reader.onloadend = async function() {
-        try {
-            await addDoc(carriagesCol, {
-                from: senderInput.value,
-                to: receiverInput.value,
-                message: msgInput.value || "Wishing you a wonderful Men's Day! 👔", // Updated emoji & text
-                photo: reader.result,
-                timestamp: serverTimestamp() 
-            });
+    try {
+        // Automatically resize and compress photo before uploading
+        const compressedBase64Photo = await compressImage(fileInput.files[0]);
 
-            // Visual feedback
-            const counter = document.getElementById('coach-count');
+        await addDoc(carriagesCol, {
+            from: senderInput.value,
+            to: receiverInput.value,
+            message: msgInput.value || "Wishing you a wonderful Men's Day! 👔",
+            photo: compressedBase64Photo,
+            timestamp: serverTimestamp() 
+        });
+
+        // Visual feedback
+        const counter = document.getElementById('coach-count');
+        if (counter) {
             counter.classList.add('count-bump');
             setTimeout(() => counter.classList.remove('count-bump'), 300);
-
-            // Reset form
-            senderInput.value = ''; receiverInput.value = ''; msgInput.value = ''; fileInput.value = ''; 
-            alert("Carriage joined the Global Express! 🌍");
-        } catch (e) {
-            alert("Error: Make sure your Firebase Rules are set to test mode!");
         }
-    };
-    reader.readAsDataURL(fileInput.files[0]);
+
+        // Reset form
+        senderInput.value = ''; receiverInput.value = ''; msgInput.value = ''; fileInput.value = ''; 
+        alert("Carriage joined the Global Express! 🌍");
+    } catch (e) {
+        console.error("Firestore write error:", e);
+        alert("Error uploading carriage: " + (e.message || e));
+    }
 };
 
 // 3. RENDER FUNCTION
 function renderTrain(data) {
     globalTrainData = data;
     const container = document.getElementById('carriage-container');
+    if (!container) return;
     
-    // Create ONE train (Engine + All Coaches)
     const trainHTML = `
         <div class="train-unit">
             <div class="engine-box">
-                <div class="banner">MEN'S EXPRESS 👔</div> <!-- Updated banner -->
+                <div class="banner">MEN'S EXPRESS 👔</div>
                 <div class="steam-box">
                     <div class="steam s1">💨</div><div class="steam s2">💨</div>
                     <div class="steam s3">💨</div><div class="steam s4">💨</div>
@@ -83,11 +125,8 @@ function renderTrain(data) {
         </div>
     `;
 
-    // Put it TWICE for the infinite loop
     container.innerHTML = `<div class="train-group">${trainHTML}${trainHTML}</div>`;
 }
-
-
 
 // 4. POPUP & SPEED
 window.openMsg = function(index) {
@@ -101,33 +140,32 @@ window.openMsg = function(index) {
     }
     overlay.innerHTML = `
         <div class="message-box">
-            <h2 style="color: var(--accent);">👔 For ${item.to} 👔</h2> <!-- Updated popup title emoji -->
+            <h2 style="color: var(--accent);">👔 For ${item.to} 👔</h2>
             <p>"${item.message}"</p>
             <p><strong>— From ${item.from}</strong></p>
             <button class="close-btn" onclick="closeMsg()">Close 🚂</button>
         </div>
     `;
     overlay.style.display = 'flex';
-    document.querySelector('.train-group').style.animationPlayState = 'paused';
+    const trainGroup = document.querySelector('.train-group');
+    if (trainGroup) trainGroup.style.animationPlayState = 'paused';
 };
 
 window.closeMsg = function() {
-    document.getElementById('msgOverlay').style.display = 'none';
-    document.querySelector('.train-group').style.animationPlayState = 'running';
+    const overlay = document.getElementById('msgOverlay');
+    if (overlay) overlay.style.display = 'none';
+    const trainGroup = document.querySelector('.train-group');
+    if (trainGroup) trainGroup.style.animationPlayState = 'running';
 };
 
 function updateTrainSpeed(count) {
     const train = document.querySelector('.train-group');
     if(!train) return;
-
-    // This is the "Goldilocks" speed: not too fast, not too slow
     let newSpeed = 10 + (count * 2); 
-    
     train.style.animationDuration = newSpeed + "s";
 }
 
-
-// 5. THE GLOBAL LISTENER (Updates instantly for everyone)
+// 5. THE GLOBAL LISTENER
 const q = query(carriagesCol, orderBy("timestamp", "asc"));
 
 onSnapshot(q, (snapshot) => {
@@ -136,17 +174,13 @@ onSnapshot(q, (snapshot) => {
         ...doc.data()
     }));
 
-    // --- UPDATE THE COUNTER ---
     const countElement = document.getElementById('coach-count');
     if (countElement) {
         countElement.innerText = data.length; 
-        
-        // Add the visual bump effect
         countElement.classList.add('count-bump');
         setTimeout(() => countElement.classList.remove('count-bump'), 300);
     }
 
-    // --- UPDATE SPEED & RENDER ---
     renderTrain(data);
     updateTrainSpeed(data.length);
     

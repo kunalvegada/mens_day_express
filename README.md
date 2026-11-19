@@ -1,2 +1,2 @@
-# mens_day_express
-​Interactive Men's Day Express web app where users attach photo wishes and messages as train carriages using HTML, CSS, JavaScript, and Firebase.
+# mens-day-express
+# 🚂 men's Day Express 2026 A live, interactive train experience where users can attach photos and wishes to celebrate the women in their lives. - **Tech:** HTML5, CSS3 (Flexbox/Animations), Vanilla JS, Firebase. - **Features:** Dynamic train speed, live coach counter, and popup messages.
